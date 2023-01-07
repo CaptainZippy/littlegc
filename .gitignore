@@ -1,2 +1,5 @@
 # Temporary files/folders have _ prefix
 _*
+# VS2022
+out
+.vs
