@@ -62,6 +62,7 @@ struct test_fixture {
         for (auto o : objects) {
             assert(o->isDead == o->shouldDie);
         }
+        lgc_collect(&gc);
     }
 
     lgc_t gc;

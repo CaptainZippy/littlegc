@@ -2,8 +2,6 @@
 #include <cassert>
 
 enum lgc_state {
-    white = 0, // uknown set
-    black = 1, // alive & scanned
     grey = 2,  // alive, to scan
 };
 
@@ -12,10 +10,8 @@ using lgc_object_p = lgc_object_t*;
 static void list_push_front(lgc_object_t* list, lgc_object_t* obj) {
     assert(obj->next == nullptr);
     assert(obj->prev == nullptr);
-    assert(obj->color == 0);
     obj->next = list->next;
     obj->prev = list;
-    obj->color = white;
     list->next->prev = obj;
     list->next = obj;
 }
@@ -25,7 +21,6 @@ static void list_remove(lgc_object_t* obj) {
     obj->next->prev = obj->prev;
     obj->next = nullptr;
     obj->prev = nullptr;
-    obj->color = white;
 }
 
 bool lgc_init(lgc_t* gc, lgc_scan_func scan, lgc_dead_func dead) {
@@ -38,6 +33,7 @@ bool lgc_init(lgc_t* gc, lgc_scan_func scan, lgc_dead_func dead) {
 
     gc->scan_func = scan;
     gc->dead_func = dead;
+    gc->white_color = 0; // 0 or 1. So black = !white. Grey is always 2.
     return true;
 }
 
@@ -47,10 +43,11 @@ void lgc_register(lgc_t* gc, lgc_object_t* obj) {
     // white -> first
     // white -> obj -> first
     list_push_front(&gc->white_list, obj);
+    obj->color = gc->white_color;
 }
 
-static void lgc_is_alive(lgc_t* gc, lgc_object_t* object) {
-    if (object->color == white) {
+static void lgc_mark_alive(lgc_t* gc, lgc_object_t* object) {
+    if (object->color == gc->white_color) {
         list_remove(object);
         list_push_front(&gc->alive_list, object);
         object->color = grey;
@@ -58,24 +55,27 @@ static void lgc_is_alive(lgc_t* gc, lgc_object_t* object) {
 }
 
 static void lgc_mark(lgc_t* gc) {
-    // first scan the roots
-    (*gc->scan_func)(gc, nullptr, &lgc_is_alive);
-    // run backwards through this list - new additions from scan are pushed at the front
+    // First scan the roots
+    (*gc->scan_func)(gc, nullptr, &lgc_mark_alive);
+    // Run backwards through this list - new additions from scan are pushed at the front.
+    // So marking is complete when we reach the list alive_list sentinel.
+    lgc_u8 black_color = gc->white_color ? 0 : 1;
     for (lgc_object_p cur = gc->alive_list.prev, end = &gc->alive_list; cur != end; cur = cur->prev) {
         assert(cur->color == grey);
-        cur->color = black;
-        (*gc->scan_func)(gc, cur, &lgc_is_alive);
+        cur->color = black_color;
+        (*gc->scan_func)(gc, cur, &lgc_mark_alive);
     }
 }
 
 static void lgc_sweep(lgc_t* gc) {
+    // Everything remaining on the white list is dead.
     for (lgc_object_p cur = gc->white_list.next, end = &gc->white_list; cur != end; ) {
-        assert(cur->color == white);
+        assert(cur->color == gc->white_color);
         lgc_object_t* dead = cur;
         cur = dead->next;
         (*gc->dead_func)(gc, dead);
     }
-    // move all survivors to white list + reset color
+    // Move all survivors to white list
     if (gc->alive_list.next != &gc->alive_list) {
         gc->white_list.next = gc->alive_list.next;
         gc->white_list.prev = gc->alive_list.prev;
@@ -83,23 +83,20 @@ static void lgc_sweep(lgc_t* gc) {
         gc->alive_list.prev = &gc->alive_list;
         gc->white_list.next->prev = &gc->white_list;
         gc->white_list.prev->next = &gc->white_list;
-
-        for (lgc_object_p cur = gc->white_list.next, end = &gc->white_list; cur != end; cur = cur->next) {
-            assert(cur->color == black);
-            cur->color = white;
-        }
     }
     else {
         gc->white_list.next = &gc->white_list;
         gc->white_list.prev = &gc->white_list;
     }
+    // Flip color
+    gc->white_color = gc->white_color ? 0 : 1;
 }
 
 void lgc_collect(lgc_t* gc) {
     // check preconditions
-    assert(gc->alive_list.next == gc->alive_list.prev); // is empty
+    assert(gc->alive_list.next == gc->alive_list.prev); // Alive list initially empty
     for (lgc_object_t* cur = gc->white_list.next, *end = &gc->white_list; cur != end; cur = cur->next) {
-        assert(cur->color == white);
+        assert(cur->color == gc->white_color);
     }
 
     // mark everything which is alive
