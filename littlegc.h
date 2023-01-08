@@ -9,17 +9,17 @@ using lgc_scan_func = void(lgc_t* gc, lgc_object_t* obj, lgc_alive_func alive_fu
 using lgc_u8 = unsigned char;
 
 struct lgc_object_t {
-	lgc_object_t* next{};
-	lgc_object_t* prev{};
-	lgc_u8 color{};
+    lgc_object_t* next{};
+    lgc_object_t* prev{};
+    lgc_u8 color{};
 };
 
 struct lgc_t {
-	void* userdata{};
-	lgc_object_t white{};
-	lgc_object_t alive{};
-	lgc_scan_func* scan_func{};
-	lgc_dead_func* dead_func{};
+    void* userdata{};
+    lgc_object_t white_list{};
+    lgc_object_t alive_list{};
+    lgc_scan_func* scan_func{};
+    lgc_dead_func* dead_func{};
 };
 
 /// Initialize an instance of a garbage collector.
