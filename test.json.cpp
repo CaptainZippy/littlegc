@@ -9,6 +9,7 @@
 namespace ns_json {
 struct json_value;
 
+// Json values which involve dynamic allocations - strings, objects, arrays
 struct json_compound {
     enum class CompoundKind { invalid = 0, string, object, array };
     lgc_object_t gc_obj;
@@ -22,6 +23,7 @@ struct json_compound {
         return reinterpret_cast<json_compound*>(addr);
     }
 
+    void destroy();
     json_value toValue();
 };
 
@@ -40,6 +42,8 @@ struct json_array : json_compound {
     std::vector<json_value> items;
 };
 
+// Json values such as numbers/bools/null can be stored without any allocations.
+// strings, objects, arrays point to an external json_compound object.
 struct json_value {
     enum class ValueKind { invalid = 0, compound, number, boolean, null };
     union Value {
@@ -55,10 +59,31 @@ json_value json_compound::toValue() {
     return {json_value::ValueKind::compound, this};
 }
 
-struct test_json_fixture {
-    test_json_fixture() { lgc_init(&gc, testscan, testfree); }
+void json_compound::destroy() {
+    // or we could add a vtable
+    switch (kind) {
+        case CompoundKind::string: {
+            delete (json_string*)this;
+            break;
+        }
+        case CompoundKind::object: {
+            delete (json_object*)this;
+            break;
+        }
+        case CompoundKind::array: {
+            delete (json_array*)this;
+            break;
+        }
+        default: {
+            assert(false);
+        }
+    }
+}
 
-    static void testscan(lgc_t* gc, lgc_object_t* obj, lgc_alive_func alive_func) {
+struct test_json_fixture {
+    test_json_fixture() { lgc_init(&gc, json_scan, json_free); }
+
+    static void json_scan(lgc_t* gc, lgc_object_t* obj, lgc_alive_func alive_func) {
         if (obj) {
             json_compound* o = json_compound::from_gcobj(obj);
             switch (o->kind) {
@@ -107,17 +132,18 @@ struct test_json_fixture {
         return a;
     }
 
-    static void testfree(lgc_t* gc, lgc_object_t* obj) {
+    static void json_free(lgc_t* gc, lgc_object_t* obj) {
         auto c = json_compound::from_gcobj(obj);
         auto fixture = test_json_fixture::from_gc(gc);
-        auto it = fixture->garbage.find(c);
-        assert(it != fixture->garbage.end());
-        fixture->garbage.erase(it);
+        auto it = fixture->shouldBeGarbage.find(c);
+        assert(it != fixture->shouldBeGarbage.end());
+        fixture->shouldBeGarbage.erase(it);
+        c->destroy();
     }
 
     void collect() {
         lgc_collect(&gc);
-        assert(garbage.size() == 0);
+        assert(shouldBeGarbage.size() == 0);
     }
 
     static test_json_fixture* from_gc(lgc_t* gc) {
@@ -128,16 +154,15 @@ struct test_json_fixture {
 
     void addRoot(json_compound* c) { roots.emplace_back(c); }
 
-    void addGarbage(json_compound* c) { garbage.emplace(c); }
+    void addGarbage(json_compound* c) { shouldBeGarbage.emplace(c); }
 
     lgc_t gc;
     std::vector<json_compound*> roots;
-    std::unordered_set<json_compound*> garbage;
+    std::unordered_set<json_compound*> shouldBeGarbage;
 };
 }  // namespace ns_json
 
 int test_json() {
-    // no references
     using namespace ns_json;
     {
         test_json_fixture fixture;
