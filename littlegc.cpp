@@ -2,7 +2,7 @@
 #include <cassert>
 
 enum lgc_state {
-    grey = 2,  // alive, to scan
+    grey = 2,  // alive, needs scanning
 };
 
 using lgc_object_p = lgc_object_t*;
@@ -38,6 +38,9 @@ bool lgc_init(lgc_t* gc, lgc_scan_func scan, lgc_dead_func dead) {
 }
 
 void lgc_register(lgc_t* gc, lgc_object_t* obj) {
+    assert(obj->color == 0);
+    assert(obj->next == nullptr);
+    assert(obj->prev == nullptr);
     // insert after head of list:
     // white -> first
     // white -> obj -> first
@@ -45,11 +48,14 @@ void lgc_register(lgc_t* gc, lgc_object_t* obj) {
     obj->color = gc->white_color;
 }
 
-static void lgc_mark_alive(lgc_t* gc, lgc_object_t* object) {
-    if (object->color == gc->white_color) {
-        list_remove(object);
-        list_push_front(&gc->alive_list, object);
-        object->color = grey;
+static void lgc_mark_alive(lgc_t* gc, lgc_object_t* obj) {
+    // obj should be on one of the lists already
+    assert(obj->next != nullptr);
+    assert(obj->prev != nullptr);
+    if (obj->color == gc->white_color) {
+        list_remove(obj);
+        list_push_front(&gc->alive_list, obj);
+        obj->color = grey;
     }
 }
 

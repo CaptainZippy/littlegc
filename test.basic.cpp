@@ -73,7 +73,7 @@ struct test_fixture {
     std::vector<test_object*> roots;
 };
 
-int main() {
+int test_basic() {
     // no references
     {
         test_fixture fixture;
