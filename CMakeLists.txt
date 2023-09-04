@@ -1,2 +1,5 @@
+cmake_minimum_required(VERSION 3.26)
 project(littlegc)
-add_executable (littlgc test.basic.cpp test.json.cpp test.main.cpp littlegc.cpp)
+set(SRCS README.md littlegc.h littlegc.cpp test.basic.cpp test.json.cpp test.main.cpp)
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${SRCS})
+add_executable (littlgc ${SRCS})
